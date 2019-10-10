@@ -315,8 +315,9 @@ for param in model.parameters():
 model.eval()
 
 test_pred = np.zeros((len(test_dataset) * n_classes, 1))
+from tqdm import tqdm
 
-for i, x_batch in enumerate(tqdm(data_loader_test)):
+for i, x_batch in tqdm(enumerate(tqdm(data_loader_test))):
     
     x_batch = x_batch["image"]
     x_batch = x_batch.to(device, dtype=torch.float)
