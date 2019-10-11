@@ -19,8 +19,8 @@
 # Input
 
 dir_csv = '../input/'
-dir_train_img = '../input/stage_1_train_images/'
-dir_test_img = '../input/stage_1_test_images/'
+dir_train_img = '../input/stage_1_train_pngs/'
+dir_test_img = '../input/stage_1_test_pngs/'
 
 
 # In[2]:
@@ -143,11 +143,11 @@ class IntracranialDataset(Dataset):
         return image
 
     def __getitem__(self, idx):
-        file_path = os.path.join(self.data_dir, self.data.loc[idx, 'Image'] + '.dcm')
+        file_path = os.path.join(self.data_dir, self.data.loc[idx, 'Image'] + '.png')
         from pathlib import Path
         if not Path(file_path).is_file():
             return self.__getitem__(idx + 1)
-        img = self._load_dicom_to_image(file_path)
+        img = cv2.imread(file_path)
         if self.transform:       
             augmented = self.transform(image=img)
             img = augmented['image']   
