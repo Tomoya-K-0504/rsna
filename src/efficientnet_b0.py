@@ -58,6 +58,7 @@ batch_size = 8
 # Libraries
 
 from apex import amp
+from pathlib import Path
 import os
 import cv2
 import glob
@@ -190,7 +191,7 @@ train.head()
 
 # Some files didn't contain legitimate images, so we need to remove them
 
-png = glob.glob(os.path.join(dir_train_img, '*.dcm'))
+png = glob.glob(os.path.join(dir_train_img, '*.png'))
 png = [os.path.basename(png)[:-4] for png in png]
 png = np.array(png)
 
@@ -233,8 +234,8 @@ train_dataset = IntracranialDataset(
 test_dataset = IntracranialDataset(
     csv_file='test.csv', data_dir=dir_test_img, transform=transform_test, labels=False)
 
-data_loader_train = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=1)
-data_loader_test = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=1)
+data_loader_train = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+data_loader_test = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
 
 
 # In[13]:
@@ -341,5 +342,5 @@ submission =  pd.read_csv(os.path.join(dir_csv, 'stage_1_sample_submission.csv')
 submission = pd.concat([submission.drop(columns=['Label']), pd.DataFrame(test_pred)], axis=1)
 submission.columns = ['ID', 'Label']
 
-submission.to_csv('submission.csv', index=False)
+submission.to_csv(f'{Path(__file__).name}_sub.csv', index=False)
 submission.head()
