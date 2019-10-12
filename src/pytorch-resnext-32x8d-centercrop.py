@@ -1,22 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# # Introduction
-# 
-# Using mixed precision along with efficientnet-b0 and a little bit of pre-processing, a single pass of the entire 670k image dataset should take approx. 45m (at 224x224 resolution).
-
-# # Sources
-# 
-# Windowing functions for pre-processed data taken from the following:
-# 
-# - https://www.kaggle.com/omission/eda-view-dicom-images-with-correct-windowing 
-
-# # Parameters
-
-# In[1]:
-
-
-# Input
 
 dir_csv = '../input/'
 dir_train_img = '../input/stage_1_train_pngs/'
@@ -31,7 +12,7 @@ dir_test_img = '../input/stage_1_test_pngs/'
 
 n_classes = 6
 n_epochs = 5
-batch_size = 8
+batch_size = 64
 
 
 # # Setup
@@ -39,16 +20,13 @@ batch_size = 8
 # Need to grab a couple of extra libraries
 # 
 # - Nvidia Apex for mixed precision training (https://github.com/NVIDIA/apex)
-# - Pytorch implementation of efficientnet (https://github.com/lukemelas/EfficientNet-PyTorch)
 
 # In[3]:
 
 
 # Installing useful libraries
 
-#get_ipython().system('git clone https://github.com/NVIDIA/apex && cd apex && pip install -v --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./')
-# !cd ../apex && pip install -v --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./    
-#get_ipython().system('pip install --upgrade efficientnet-pytorch')
+# !git clone https://github.com/NVIDIA/apex && cd apex && pip install -v --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
     
 
 
@@ -57,22 +35,24 @@ batch_size = 8
 
 # Libraries
 
-from apex import amp
+# from apex import amp
 import os
 import cv2
 import glob
-from skimage.transform import resize
 import pydicom
 import numpy as np
 import pandas as pd
-from efficientnet_pytorch import EfficientNet
 import torch
+import torchvision
 import torch.optim as optim
-from albumentations import Compose, ShiftScaleRotate, Resize
+from skimage.transform import resize
+from albumentations import Compose, ShiftScaleRotate, Resize, CenterCrop, HorizontalFlip, RandomBrightnessContrast
 from albumentations.pytorch import ToTensor
 from torch.utils.data import Dataset
 from tqdm import tqdm_notebook as tqdm
 from matplotlib import pyplot as plt
+from apex import amp
+from torchvision import transforms
 
 
 # In[5]:
@@ -80,12 +60,6 @@ from matplotlib import pyplot as plt
 
 CT_LEVEL = 40
 CT_WIDTH = 150
-
-LR = 0.001
-
-
-# In[6]:
-
 
 def rescale_pixelarray(dataset):
     image = dataset.pixel_array
@@ -102,7 +76,7 @@ def set_manual_window(hu_image, custom_center, custom_width):
     return hu_image
 
 
-# In[7]:
+# In[6]:
 
 
 
@@ -143,10 +117,11 @@ class IntracranialDataset(Dataset):
         return image
 
     def __getitem__(self, idx):
-        file_path = os.path.join(self.data_dir, self.data.loc[idx, 'Image'] + '.png')
+        file_path = os.path.join(self.data_dir, self.data.loc[idx, 'Image'] + '.dcm')
         from pathlib import Path
         if not Path(file_path).is_file():
             return self.__getitem__(idx + 1)
+        # img = self._load_dicom_to_image(file_path)
         img = cv2.imread(file_path)
         if self.transform:       
             augmented = self.transform(image=img)
@@ -162,7 +137,7 @@ class IntracranialDataset(Dataset):
 
 # # CSV
 
-# In[8]:
+# In[7]:
 
 
 # CSVs
@@ -171,7 +146,7 @@ train = pd.read_csv(os.path.join(dir_csv, 'stage_1_train.csv'))
 test = pd.read_csv(os.path.join(dir_csv, 'stage_1_sample_submission.csv'))
 
 
-# In[9]:
+# In[8]:
 
 
 
@@ -185,7 +160,46 @@ train['Image'] = 'ID_' + train['Image']
 train.head()
 
 
+# In[9]:
+
+
+undersample_seed=0
+train["any"].value_counts()
+
+
 # In[10]:
+
+
+num_ill_patients = train[train["any"]==1].shape[0]
+num_ill_patients
+
+
+# In[11]:
+
+
+healthy_patients = train[train["any"]==0].index.values
+healthy_patients_selection = np.random.RandomState(undersample_seed).choice(
+    healthy_patients, size=num_ill_patients, replace=False
+)
+len(healthy_patients_selection)
+
+
+# In[12]:
+
+
+sick_patients = train[train["any"]==1].index.values
+selected_patients = list(set(healthy_patients_selection).union(set(sick_patients)))
+len(selected_patients)/2
+
+
+# In[13]:
+
+
+new_train = train.loc[selected_patients].copy()
+new_train["any"].value_counts()
+
+
+# In[14]:
 
 
 # Some files didn't contain legitimate images, so we need to remove them
@@ -198,7 +212,7 @@ train = train[train['Image'].isin(png)]
 train.to_csv('train.csv', index=False)
 
 
-# In[11]:
+# In[15]:
 
 
 # Also prepare the test data
@@ -213,17 +227,21 @@ test.to_csv('test.csv', index=False)
 
 # # DataLoaders
 
-# In[12]:
+# In[16]:
 
 
 # Data loaders
 
-transform_train = Compose([
+transform_train = Compose([CenterCrop(200, 200),
+                           #Resize(224, 224),
+                           HorizontalFlip(),
+                           RandomBrightnessContrast(),
     ShiftScaleRotate(),
     ToTensor()
 ])
 
-transform_test= Compose([
+transform_test= Compose([CenterCrop(200, 200),
+                         #Resize(224, 224),
     ToTensor()
 ])
 
@@ -233,23 +251,58 @@ train_dataset = IntracranialDataset(
 test_dataset = IntracranialDataset(
     csv_file='test.csv', data_dir=dir_test_img, transform=transform_test, labels=False)
 
-data_loader_train = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=1)
-data_loader_test = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=1)
+data_loader_train = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+data_loader_test = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
 
 
-# In[13]:
+# In[17]:
+
+
+len(train_dataset)
+
+
+# In[18]:
+
+
+# Plot train example
+
+batch = next(iter(data_loader_train))
+fig, axs = plt.subplots(1, 5, figsize=(15,5))
+
+for i in np.arange(5):
+    
+    axs[i].imshow(np.transpose(batch['image'][i].numpy(), (1,2,0))[:,:,0], cmap=plt.cm.bone)
+
+
+# In[19]:
+
+
+# Plot test example
+
+batch = next(iter(data_loader_test))
+fig, axs = plt.subplots(1, 5, figsize=(15,5))
+
+for i in np.arange(5):
+    
+    axs[i].imshow(np.transpose(batch['image'][i].numpy(), (1,2,0))[:,:,0], cmap=plt.cm.bone)
 
 
 # # Model
 
-# In[15]:
+# In[20]:
+
+
+torch.hub.list('facebookresearch/WSL-Images')
+
+
+# In[21]:
 
 
 # Model
 
 device = torch.device("cuda:0")
-model = EfficientNet.from_pretrained('efficientnet-b0') 
-model._fc = torch.nn.Linear(1280, n_classes)
+model = torch.hub.load('facebookresearch/WSL-Images', 'resnext101_32x8d_wsl')
+model.fc = torch.nn.Linear(2048, n_classes)
 
 model.to(device)
 
@@ -262,7 +315,7 @@ model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
 
 # # Training
 
-# In[16]:
+# In[ ]:
 
 
 # Train
@@ -291,12 +344,17 @@ for epoch in range(n_epochs):
 
         with amp.scale_loss(loss, optimizer) as scaled_loss:
             scaled_loss.backward()
-        # loss.backward()
+#         loss.backward()
 
         tr_loss += loss.item()
 
         optimizer.step()
         optimizer.zero_grad()
+        
+        if epoch == 1 and step > 6000:
+            epoch_loss = tr_loss / 6000
+            print('Training Loss: {:.4f}'.format(epoch_loss))
+            break
 
     epoch_loss = tr_loss / len(data_loader_train)
     print('Training Loss: {:.4f}'.format(epoch_loss))
@@ -304,7 +362,7 @@ for epoch in range(n_epochs):
 
 # # Inference
 
-# In[17]:
+# In[ ]:
 
 
 # Inference
@@ -315,9 +373,8 @@ for param in model.parameters():
 model.eval()
 
 test_pred = np.zeros((len(test_dataset) * n_classes, 1))
-from tqdm import tqdm
 
-for i, x_batch in tqdm(enumerate(tqdm(data_loader_test))):
+for i, x_batch in enumerate(tqdm(data_loader_test)):
     
     x_batch = x_batch["image"]
     x_batch = x_batch.to(device, dtype=torch.float)
