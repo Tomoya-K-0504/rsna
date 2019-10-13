@@ -7,11 +7,12 @@ dir_test_img = '../../input/stage_1_test_pngs/'
 # Parameters
 
 n_classes = 6
-n_epochs = 5
-batch_size = 32
+n_epochs = 2
+batch_size = 8
+threshold = 0.8
 
 
-from apex import amp
+# from apex import amp
 from pathlib import Path
 import os
 import cv2
@@ -98,7 +99,7 @@ class IntracranialDataset(Dataset):
         if self.labels:
             labels = torch.tensor(
                 self.data.loc[idx, ['epidural', 'intraparenchymal', 'intraventricular', 'subarachnoid', 'subdural', 'any']])
-            return {'image': img, 'labels': labels}    
+            return {'image': img, 'labels': labels[:5]}
         
         else:      
             return {'image': img}
@@ -167,11 +168,11 @@ if __name__ == '__main__':
     data_loader_train = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
     data_loader_test = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
 
-    device = torch.device("cuda:0")
-    # device = torch.device("cpu")
+    # device = torch.device("cuda:0")
+    device = torch.device("cpu")
     # model = torch.hub.load('facebookresearch/WSL-Images', 'resnext101_32x8d_wsl')
     model = EfficientNet.from_pretrained('efficientnet-b0')
-    model._fc = torch.nn.Linear(1280, n_classes)
+    model._fc = torch.nn.Linear(1280, n_classes - 1)
 
     model.to(device)
 
@@ -179,7 +180,7 @@ if __name__ == '__main__':
     plist = [{'params': model.parameters(), 'lr': 2e-5}]
     optimizer = optim.Adam(plist, lr=2e-5)
 
-    model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
+    # model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
 
     for epoch in range(n_epochs):
 
@@ -202,9 +203,9 @@ if __name__ == '__main__':
             outputs = model(inputs)
             loss = criterion(outputs, labels)
 
-            with amp.scale_loss(loss, optimizer) as scaled_loss:
-                scaled_loss.backward()
-            # loss.backward()
+            # with amp.scale_loss(loss, optimizer) as scaled_loss:
+            #     scaled_loss.backward()
+            loss.backward()
 
             tr_loss += loss.item()
 
@@ -224,7 +225,7 @@ if __name__ == '__main__':
 
     model.eval()
 
-    test_pred = np.zeros((len(test_dataset) * n_classes, 1))
+    test_pred = np.zeros((len(test_dataset), n_classes))
 
     for i, x_batch in enumerate(tqdm(data_loader_test)):
 
@@ -233,15 +234,18 @@ if __name__ == '__main__':
 
         with torch.no_grad():
 
-            pred = model(x_batch)
+            pred = torch.sigmoid(model(x_batch)).detach().cpu()
 
-            test_pred[(i * batch_size * n_classes):((i + 1) * batch_size * n_classes)] = torch.sigmoid(
-                pred).detach().cpu().reshape((len(x_batch) * n_classes, 1))
+            test_pred[i * batch_size:(i + 1) * batch_size, 0:5] = pred
+            test_pred[i * batch_size:(i + 1) * batch_size, 5] = pred.ge(threshold).any().to(int)
+
+        if i > 50:
+            break
 
     # Submission
 
     submission =  pd.read_csv(os.path.join(dir_csv, 'stage_1_sample_submission.csv'))
-    submission = pd.concat([submission.drop(columns=['Label']), pd.DataFrame(test_pred)], axis=1)
+    submission = pd.concat([submission.drop(columns=['Label']), pd.DataFrame(test_pred.reshape((-1, 1)))], axis=1)
     submission.columns = ['ID', 'Label']
     submission.to_csv(f'../../output/{Path(__file__).name}_sub.csv', index=False)
     submission.head()
