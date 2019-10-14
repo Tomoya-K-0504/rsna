@@ -289,7 +289,7 @@ if __name__ == '__main__':
 
 
     device = torch.device("cuda:0")
-    model = torch.hub.load('facebookresearch/WSL-Images', 'resnext101_32x16d_wsl')
+    model = torch.hub.load('facebookresearch/WSL-Images', 'resnext101_32x32d_wsl')
     model.fc = torch.nn.Linear(2048, n_classes)
 
     model.to(device)
