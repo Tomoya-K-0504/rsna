@@ -178,8 +178,8 @@ if __name__ == '__main__':
     # device = torch.device("cuda:0")
     device = torch.device("cpu")
     # model = torch.hub.load('facebookresearch/WSL-Images', 'resnext101_32x8d_wsl')
-    model = EfficientNet.from_pretrained('efficientnet-b0')
-    model._fc = SepalateFc(input_size=1280)
+    model = torch.hub.load('pytorch/vision', 'shufflenet_v2_x1_0', pretrained=True)
+    model.fc = torch.nn.Linear(1024, n_classes)
 
     model.to(device)
 

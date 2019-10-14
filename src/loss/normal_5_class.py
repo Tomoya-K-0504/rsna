@@ -168,11 +168,11 @@ if __name__ == '__main__':
     data_loader_train = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
     data_loader_test = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
 
-    # device = torch.device("cuda:0")
-    device = torch.device("cpu")
+    device = torch.device("cuda:0")
+    # device = torch.device("cpu")
     # model = torch.hub.load('facebookresearch/WSL-Images', 'resnext101_32x8d_wsl')
-    model = EfficientNet.from_pretrained('efficientnet-b0')
-    model._fc = torch.nn.Linear(1280, n_classes - 1)
+    model = torch.hub.load('pytorch/vision', 'shufflenet_v2_x1_0', pretrained=True)
+    model.fc = torch.nn.Linear(1024, n_classes - 1)
 
     model.to(device)
 
@@ -180,7 +180,7 @@ if __name__ == '__main__':
     plist = [{'params': model.parameters(), 'lr': 2e-5}]
     optimizer = optim.Adam(plist, lr=2e-5)
 
-    # model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
+    model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
 
     for epoch in range(n_epochs):
 
@@ -203,9 +203,9 @@ if __name__ == '__main__':
             outputs = model(inputs)
             loss = criterion(outputs, labels)
 
-            # with amp.scale_loss(loss, optimizer) as scaled_loss:
-            #     scaled_loss.backward()
-            loss.backward()
+            with amp.scale_loss(loss, optimizer) as scaled_loss:
+                scaled_loss.backward()
+            # loss.backward()
 
             tr_loss += loss.item()
 
@@ -239,13 +239,13 @@ if __name__ == '__main__':
             test_pred[i * batch_size:(i + 1) * batch_size, 0:5] = pred
             test_pred[i * batch_size:(i + 1) * batch_size, 5] = pred.ge(threshold).any().to(int)
 
-        if i > 50:
-            break
+        # if i > 50:
+        #     break
 
     # Submission
 
     submission =  pd.read_csv(os.path.join(dir_csv, 'stage_1_sample_submission.csv'))
     submission = pd.concat([submission.drop(columns=['Label']), pd.DataFrame(test_pred.reshape((-1, 1)))], axis=1)
     submission.columns = ['ID', 'Label']
-    submission.to_csv(f'../../output/{Path(__file__).name}_sub.csv', index=False)
+    submission.to_csv(f'../../output/{Path(__file__).name[:-3]}_sub.csv', index=False)
     submission.head()
