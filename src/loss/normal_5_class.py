@@ -7,31 +7,28 @@ dir_test_img = '../../input/stage_1_test_pngs/'
 # Parameters
 
 n_classes = 6
-n_epochs = 2
-batch_size = 8
-threshold = 0.8
+n_epochs = 5
+batch_size = 32
+threshold = 0.5
 
 
-# from apex import amp
-from pathlib import Path
-import os
-import cv2
 import glob
-import pydicom
+import os
+from pathlib import Path
+
+import cv2
 import numpy as np
 import pandas as pd
+import pydicom
 import torch
-import torchvision
 import torch.optim as optim
-from efficientnet_pytorch import EfficientNet
-from skimage.transform import resize
-from albumentations import Compose, ShiftScaleRotate, Resize, CenterCrop, HorizontalFlip, RandomBrightnessContrast
+from albumentations import Compose, ShiftScaleRotate, CenterCrop, HorizontalFlip, RandomBrightnessContrast
 from albumentations.pytorch import ToTensor
+from skimage.transform import resize
 from torch.utils.data import Dataset
 from tqdm import tqdm as tqdm
-from matplotlib import pyplot as plt
-from torchvision import transforms
 
+from apex import amp
 
 CT_LEVEL = 40
 CT_WIDTH = 150
