@@ -12,27 +12,23 @@ batch_size = 8
 threshold = 0.6
 
 
+import glob
+import os
 # from apex import amp
 from pathlib import Path
-import os
+
 import cv2
-import glob
-import pydicom
 import numpy as np
 import pandas as pd
+import pydicom
 import torch
-import torchvision
 import torch.optim as optim
-from torch import nn
-from efficientnet_pytorch import EfficientNet
-from skimage.transform import resize
-from albumentations import Compose, ShiftScaleRotate, Resize, CenterCrop, HorizontalFlip, RandomBrightnessContrast
+from albumentations import Compose, ShiftScaleRotate, CenterCrop, HorizontalFlip, RandomBrightnessContrast
 from albumentations.pytorch import ToTensor
+from skimage.transform import resize
+from torch import nn
 from torch.utils.data import Dataset
 from tqdm import tqdm as tqdm
-from matplotlib import pyplot as plt
-from torchvision import transforms
-
 
 CT_LEVEL = 40
 CT_WIDTH = 150
@@ -179,7 +175,7 @@ if __name__ == '__main__':
     device = torch.device("cpu")
     # model = torch.hub.load('facebookresearch/WSL-Images', 'resnext101_32x8d_wsl')
     model = torch.hub.load('pytorch/vision', 'shufflenet_v2_x1_0', pretrained=True)
-    model.fc = torch.nn.Linear(1024, n_classes)
+    model.fc = SepalateFc(1024)
 
     model.to(device)
 
