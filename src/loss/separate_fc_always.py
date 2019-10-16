@@ -14,7 +14,6 @@ threshold = 0.6
 
 import glob
 import os
-# from apex import amp
 from pathlib import Path
 
 import cv2
@@ -29,6 +28,8 @@ from skimage.transform import resize
 from torch import nn
 from torch.utils.data import Dataset
 from tqdm import tqdm as tqdm
+
+from apex import amp
 
 CT_LEVEL = 40
 CT_WIDTH = 150
@@ -171,8 +172,8 @@ if __name__ == '__main__':
     data_loader_train = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
     data_loader_test = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
 
-    # device = torch.device("cuda:0")
-    device = torch.device("cpu")
+    device = torch.device("cuda:0")
+    # device = torch.device("cpu")
     # model = torch.hub.load('facebookresearch/WSL-Images', 'resnext101_32x8d_wsl')
     model = torch.hub.load('pytorch/vision', 'shufflenet_v2_x1_0', pretrained=True)
     model.fc = SepalateFc(1024)
@@ -184,7 +185,7 @@ if __name__ == '__main__':
     plist = [{'params': model.parameters(), 'lr': 2e-5}]
     optimizer = optim.Adam(plist, lr=2e-5)
 
-    # model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
+    model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
 
     for epoch in range(n_epochs):
 
@@ -211,9 +212,9 @@ if __name__ == '__main__':
 
             loss = loss_5 + loss_2
 
-            # with amp.scale_loss(loss, optimizer) as scaled_loss:
-            #     scaled_loss.backward()
-            loss.backward()
+            with amp.scale_loss(loss, optimizer) as scaled_loss:
+                scaled_loss.backward()
+            # loss.backward()
 
             tr_loss += loss.item()
 
@@ -247,8 +248,8 @@ if __name__ == '__main__':
             test_pred[i * batch_size:(i + 1) * batch_size, 0:5] = torch.sigmoid(pred_5).detach().cpu()
             test_pred[i * batch_size:(i + 1) * batch_size, 5] = torch.sigmoid(pred_2.reshape((-1,))).detach().cpu()
 
-        if i > 50:
-            break
+        # if i > 50:
+        #     break
 
     # Submission
 
