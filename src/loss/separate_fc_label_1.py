@@ -7,8 +7,8 @@ dir_test_img = '../../input/stage_1_test_pngs/'
 # Parameters
 
 n_classes = 6
-n_epochs = 2
-batch_size = 8
+n_epochs = 5
+batch_size = 32
 threshold = 0.6
 
 
