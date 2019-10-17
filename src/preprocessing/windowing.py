@@ -37,27 +37,6 @@ def view_images(images):
     plt.show()
 
 
-def set_manual_window(hu_image, custom_center, custom_width):
-    min_value = custom_center - (custom_width / 2)
-    max_value = custom_center + (custom_width / 2)
-    hu_image[hu_image < min_value] = min_value
-    hu_image[hu_image > max_value] = max_value
-    return hu_image
-
-
-def _get_hounsfield_window(dicom):
-    hu_image = rescale_pixelarray(dicom)
-    windowed_image = set_manual_window(hu_image, 40, 150)
-    return windowed_image
-
-
-def rescale_pixelarray(dataset):
-    image = dataset.pixel_array
-    rescaled_image = image * dataset.RescaleSlope + dataset.RescaleIntercept
-    rescaled_image[rescaled_image < -1024] = -1024
-    return rescaled_image
-
-
 def get_first_of_dicom_field_as_int(x):
     #get x[0] as in int is x is a 'pydicom.multival.MultiValue', otherwise get int(x)
     if type(x) == pydicom.multival.MultiValue:
@@ -258,7 +237,10 @@ if __name__ == '__main__':
         if not Path(os.path.join(TRAIN_IMG_PATH, path)).is_file():
             return
         dcm = pydicom.dcmread(os.path.join(TRAIN_IMG_PATH, path))
-        img = window_func(dcm) * 255
+        try:
+            img = window_func(dcm) * 255
+        except ValueError as e:
+            return
         img = resize(img, IMAGE_SIZE)
         cv2.imwrite(os.path.join(window_path, path)[:-4] + '.png', img)
 

@@ -10,22 +10,16 @@ CT_LEVEL = 40
 CT_WIDTH = 150
 nn_input_shape = (224, 224)
 
-import os
-import cv2
 import glob
-from skimage.transform import resize
-import pydicom
+import os
+from pathlib import Path
+
+import cv2
 import numpy as np
 import pandas as pd
-from efficientnet_pytorch import EfficientNet
-import torch
-import torch.optim as optim
-from albumentations import Compose, ShiftScaleRotate, Resize
-from albumentations.pytorch import ToTensor
-from torch.utils.data import Dataset
+import pydicom
+from skimage.transform import resize
 from tqdm import tqdm_notebook as tqdm
-from pathlib import Path
-from matplotlib import pyplot as plt
 
 
 def rescale_pixelarray(dataset):
@@ -41,21 +35,6 @@ def set_manual_window(hu_image, custom_center, custom_width):
     hu_image[hu_image < min_value] = min_value
     hu_image[hu_image > max_value] = max_value
     return hu_image
-
-
-class IntracranialDataset(Dataset):
-
-    def __init__(self, csv_file, data_dir, labels, ct_level=CT_LEVEL, ct_width=CT_WIDTH, transform=None):
-        
-        self.data_dir = data_dir
-        self.data = pd.read_csv(csv_file)
-        self.transform = transform
-        self.labels = labels
-        self.level = ct_level
-        self.width = ct_width
-
-    def __len__(self):
-        return len(self.data)
 
 
 def resize_(image):
@@ -115,9 +94,10 @@ if __name__ == '__main__':
         img = _load_dicom_to_image(file_path)
         cv2.imwrite(f"{dir_train_png}/{train.loc[idx, 'Image']}.png", img)
 
-    for idx in tqdm(list(test.index)):
-        file_path = os.path.join(dir_test_img, test.loc[idx, 'Image'] + '.dcm')
-        if not Path(file_path).is_file():
-            continue
-        img = _load_dicom_to_image(file_path)
-        cv2.imwrite(f"{dir_test_png}/{test.loc[idx, 'Image']}.png", img)
+    #
+    # for idx in tqdm(list(test.index)):
+    #     file_path = os.path.join(dir_test_img, test.loc[idx, 'Image'] + '.dcm')
+    #     if not Path(file_path).is_file():
+    #         continue
+    #     img = _load_dicom_to_image(file_path)
+    #     cv2.imwrite(f"{dir_test_png}/{test.loc[idx, 'Image']}.png", img)
