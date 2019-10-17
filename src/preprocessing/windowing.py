@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pydicom
+from joblib import Parallel, delayed
 from skimage.transform import resize
 from tqdm import tqdm
 
@@ -253,33 +254,32 @@ if __name__ == '__main__':
 
     # test.to_csv('test.csv', index=False)
 
+    def windowing(path):
+        if not Path(os.path.join(TRAIN_IMG_PATH, path)).is_file():
+            return
+        dcm = pydicom.dcmread(os.path.join(TRAIN_IMG_PATH, path))
+        img = window_func(dcm) * 255
+        img = resize(img, IMAGE_SIZE)
+        cv2.imwrite(os.path.join(window_path, path)[:-4] + '.png', img)
+
     for window_name, window_func in WINDOWS.items():
         # window_name = 'no'
         window_path = f"../../input/processed/train_{window_name}_{IMAGE_SIZE[0]}"
         Path(window_path).mkdir(exist_ok=True)
 
-        for filename in tqdm(train['filename']):
+        Parallel(n_jobs=-1)([delayed(windowing)(filename) for filename in tqdm(train['filename'])])
+        Parallel(n_jobs=-1)([delayed(windowing)(filename) for filename in tqdm(test['filename'])])
 
-            if not Path(os.path.join(TRAIN_IMG_PATH, filename)).is_file():
-                continue
-            dcm = pydicom.dcmread(os.path.join(TRAIN_IMG_PATH, filename))
-            img = window_func(dcm) * 255
-            img = resize(img, IMAGE_SIZE)
-            cv2.imwrite(os.path.join(window_path, filename)[:-4] + '.png', img)
-
-            # break
-        # break
-
-        for filename in tqdm(test['filename']):
-            window_path = f"../../input/processed/test_{window_name}_{IMAGE_SIZE[0]}"
-            Path(window_path).mkdir(exist_ok=True)
-
-            if not Path(os.path.join(TEST_IMG_PATH, filename)).is_file():
-                continue
-
-            dcm = pydicom.read_file(os.path.join(TEST_IMG_PATH, filename))
-            img = window_func(dcm) * 255
-            img = resize(img, IMAGE_SIZE)
-            cv2.imwrite(os.path.join(window_path, filename)[:-4] + '.png', img)
+        # for filename in tqdm(test['filename']):
+        #     window_path = f"../../input/processed/test_{window_name}_{IMAGE_SIZE[0]}"
+        #     Path(window_path).mkdir(exist_ok=True)
+        #
+        #     if not Path(os.path.join(TEST_IMG_PATH, filename)).is_file():
+        #         continue
+        #
+        #     dcm = pydicom.read_file(os.path.join(TEST_IMG_PATH, filename))
+        #     img = window_func(dcm) * 255
+        #     img = resize(img, IMAGE_SIZE)
+        #     cv2.imwrite(os.path.join(window_path, filename)[:-4] + '.png', img)
 
             # break
