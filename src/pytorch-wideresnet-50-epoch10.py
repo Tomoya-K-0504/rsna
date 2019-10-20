@@ -11,8 +11,8 @@ dir_test_img = '../input/stage_1_test_pngs/'
 # Parameters
 
 n_classes = 6
-n_epochs = 5
-batch_size = 64
+n_epochs = 10
+batch_size = 16
 
 
 # # Setup
@@ -61,7 +61,6 @@ from torchvision import transforms
 CT_LEVEL = 40
 CT_WIDTH = 150
 
-
 def rescale_pixelarray(dataset):
     image = dataset.pixel_array
     rescaled_image = image * dataset.RescaleSlope + dataset.RescaleIntercept
@@ -75,6 +74,10 @@ def set_manual_window(hu_image, custom_center, custom_width):
     hu_image[hu_image < min_value] = min_value
     hu_image[hu_image > max_value] = max_value
     return hu_image
+
+
+# In[6]:
+
 
 
 # Functions
@@ -250,8 +253,8 @@ if __name__ == '__main__':
     test_dataset = IntracranialDataset(
         csv_file='test.csv', data_dir=dir_test_img, transform=transform_test, labels=False)
 
-    data_loader_train = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
-    data_loader_test = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
+    data_loader_train = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+    data_loader_test = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
 
 
     # In[17]:
@@ -374,6 +377,5 @@ if __name__ == '__main__':
     submission =  pd.read_csv(os.path.join(dir_csv, 'stage_1_sample_submission.csv'))
     submission = pd.concat([submission.drop(columns=['Label']), pd.DataFrame(test_pred)], axis=1)
     submission.columns = ['ID', 'Label']
-
     submission.to_csv(f'{Path(__file__).name}_sub.csv', index=False)
     submission.head()

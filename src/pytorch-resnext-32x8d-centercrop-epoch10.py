@@ -1,41 +1,62 @@
 
-dir_csv = '../../input/'
-dir_train_img = '../../input/stage_1_train_pngs/'
-dir_test_img = '../../input/stage_1_test_pngs/'
+dir_csv = '../input/'
+dir_train_img = '../input/stage_1_train_pngs/'
+dir_test_img = '../input/stage_1_test_pngs/'
+
+
+# In[2]:
+
 
 
 # Parameters
-debug = False 
 
-if debug:
-    n_classes = 6
-    n_epochs = 1
-    batch_size = 4
-else:
-    n_classes = 6
-    n_epochs = 5
-    batch_size = 32
+n_classes = 6
+n_epochs = 10
+batch_size = 16
 
 
-import glob
-import os
+# # Setup
+# 
+# Need to grab a couple of extra libraries
+# 
+# - Nvidia Apex for mixed precision training (https://github.com/NVIDIA/apex)
+
+# In[3]:
+
+
+# Installing useful libraries
+
+# !git clone https://github.com/NVIDIA/apex && cd apex && pip install -v --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
+    
+
+
+# In[4]:
+
+
+# Libraries
+
+from apex import amp
 from pathlib import Path
-
+import os
 import cv2
+import glob
+import pydicom
 import numpy as np
 import pandas as pd
-import pydicom
 import torch
+import torchvision
 import torch.optim as optim
-from albumentations import Compose, ShiftScaleRotate, CenterCrop, HorizontalFlip, RandomBrightnessContrast
-from albumentations.pytorch import ToTensor
 from skimage.transform import resize
-from torch import nn
+from albumentations import Compose, ShiftScaleRotate, Resize, CenterCrop, HorizontalFlip, RandomBrightnessContrast
+from albumentations.pytorch import ToTensor
 from torch.utils.data import Dataset
 from tqdm import tqdm as tqdm
+from matplotlib import pyplot as plt
+from torchvision import transforms
 
-if not debug:
-    from apex import amp
+
+# In[5]:
+
 
 CT_LEVEL = 40
 CT_WIDTH = 150
@@ -55,6 +76,8 @@ def set_manual_window(hu_image, custom_center, custom_width):
     hu_image[hu_image > max_value] = max_value
     return hu_image
 
+
+# Functions
 
 class IntracranialDataset(Dataset):
 
@@ -103,57 +126,108 @@ class IntracranialDataset(Dataset):
         if self.labels:
             labels = torch.tensor(
                 self.data.loc[idx, ['epidural', 'intraparenchymal', 'intraventricular', 'subarachnoid', 'subdural', 'any']])
-            return {'image': img, 'labels': labels}
+            return {'image': img, 'labels': labels}    
         
-        else:
+        else:      
             return {'image': img}
 
 
-class SepalateFc(nn.Module):
-    def __init__(self, input_size):
-        super(SepalateFc, self).__init__()
-        for i in range(6):
-            setattr(self, f'fc_label_{i}', torch.nn.Linear(input_size, 1))
+# # CSV
 
-    def forward(self, x):
-        out_list = []
-        for i in range(6):
-            out_list.append(getattr(self, f'fc_label_{i}')(x))
+# In[7]:
 
-        return out_list
 
+# CSVs
 
 if __name__ == '__main__':
-    if not Path('../../src/train.csv').is_file():
-        train = pd.read_csv(os.path.join(dir_csv, 'stage_1_train.csv'))
-        test = pd.read_csv(os.path.join(dir_csv, 'stage_1_sample_submission.csv'))
 
-        # Split train out into row per image and save a sample
+    train = pd.read_csv(os.path.join(dir_csv, 'stage_1_train.csv'))
+    test = pd.read_csv(os.path.join(dir_csv, 'stage_1_sample_submission.csv'))
 
-        train[['ID', 'Image', 'Diagnosis']] = train['ID'].str.split('_', expand=True)
-        train = train[['Image', 'Diagnosis', 'Label']]
-        train.drop_duplicates(inplace=True)
-        train = train.pivot(index='Image', columns='Diagnosis', values='Label').reset_index()
-        train['Image'] = 'ID_' + train['Image']
-        train.head()
 
-        # Some files didn't contain legitimate images, so we need to remove them
+    # In[8]:
 
-        png = glob.glob(os.path.join(dir_train_img, '*.png'))
-        png = [os.path.basename(png)[:-4] for png in png]
-        png = np.array(png)
 
-        train = train[train['Image'].isin(png)]
-        train.to_csv('train.csv', index=False)
 
-        # Also prepare the test data
+    # Split train out into row per image and save a sample
 
-        test[['ID','Image','Diagnosis']] = test['ID'].str.split('_', expand=True)
-        test['Image'] = 'ID_' + test['Image']
-        test = test[['Image', 'Label']]
-        test.drop_duplicates(inplace=True)
+    train[['ID', 'Image', 'Diagnosis']] = train['ID'].str.split('_', expand=True)
+    train = train[['Image', 'Diagnosis', 'Label']]
+    train.drop_duplicates(inplace=True)
+    train = train.pivot(index='Image', columns='Diagnosis', values='Label').reset_index()
+    train['Image'] = 'ID_' + train['Image']
+    train.head()
 
-        test.to_csv('test.csv', index=False)
+
+    # In[9]:
+
+
+    undersample_seed=0
+    train["any"].value_counts()
+
+
+    # In[10]:
+
+
+    num_ill_patients = train[train["any"]==1].shape[0]
+    num_ill_patients
+
+
+    # In[11]:
+
+
+    healthy_patients = train[train["any"]==0].index.values
+    healthy_patients_selection = np.random.RandomState(undersample_seed).choice(
+        healthy_patients, size=num_ill_patients, replace=False
+    )
+    len(healthy_patients_selection)
+
+
+    # In[12]:
+
+
+    sick_patients = train[train["any"]==1].index.values
+    selected_patients = list(set(healthy_patients_selection).union(set(sick_patients)))
+    len(selected_patients)/2
+
+
+    # In[13]:
+
+
+    new_train = train.loc[selected_patients].copy()
+    new_train["any"].value_counts()
+
+
+    # In[14]:
+
+
+    # Some files didn't contain legitimate images, so we need to remove them
+
+    png = glob.glob(os.path.join(dir_train_img, '*.png'))
+    png = [os.path.basename(png)[:-4] for png in png]
+    png = np.array(png)
+
+    train = train[train['Image'].isin(png)]
+    train.to_csv('train.csv', index=False)
+
+
+    # In[15]:
+
+
+    # Also prepare the test data
+
+    test[['ID','Image','Diagnosis']] = test['ID'].str.split('_', expand=True)
+    test['Image'] = 'ID_' + test['Image']
+    test = test[['Image', 'Label']]
+    test.drop_duplicates(inplace=True)
+
+    test.to_csv('test.csv', index=False)
+
+
+    # # DataLoaders
+
+    # In[16]:
+
 
     # Data loaders
 
@@ -179,13 +253,42 @@ if __name__ == '__main__':
     data_loader_train = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
     data_loader_test = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
 
-    if debug:
-        device = torch.device("cpu")
-    else:
-        device = torch.device("cuda:0")
 
-    model = torch.hub.load('pytorch/vision', 'shufflenet_v2_x1_0', pretrained=True)
-    model.fc = SepalateFc(1024)
+    # In[17]:
+
+
+    len(train_dataset)
+
+
+    # In[18]:
+
+
+    # Plot train example
+
+    batch = next(iter(data_loader_train))
+    fig, axs = plt.subplots(1, 5, figsize=(15,5))
+
+    for i in np.arange(5):
+
+        axs[i].imshow(np.transpose(batch['image'][i].numpy(), (1,2,0))[:,:,0], cmap=plt.cm.bone)
+
+
+    # In[19]:
+
+
+    # Plot test example
+
+    batch = next(iter(data_loader_test))
+    fig, axs = plt.subplots(1, 5, figsize=(15,5))
+
+    for i in np.arange(5):
+
+        axs[i].imshow(np.transpose(batch['image'][i].numpy(), (1,2,0))[:,:,0], cmap=plt.cm.bone)
+
+
+    device = torch.device("cuda:0")
+    model = torch.hub.load('facebookresearch/WSL-Images', 'resnext101_32x8d_wsl')
+    model.fc = torch.nn.Linear(2048, n_classes)
 
     model.to(device)
 
@@ -193,8 +296,7 @@ if __name__ == '__main__':
     plist = [{'params': model.parameters(), 'lr': 2e-5}]
     optimizer = optim.Adam(plist, lr=2e-5)
 
-    if not debug:
-        model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
+    model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
 
     for epoch in range(n_epochs):
 
@@ -206,7 +308,6 @@ if __name__ == '__main__':
 
         tk0 = tqdm(data_loader_train, desc="Iteration")
 
-        # 1回目の学習
         for step, batch in enumerate(tk0):
 
             inputs = batch["image"]
@@ -215,22 +316,12 @@ if __name__ == '__main__':
             inputs = inputs.to(device, dtype=torch.float)
             labels = labels.to(device, dtype=torch.float)
 
-            out_list = model(inputs)
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
 
-            loss_list = []
-            for one_label, out in enumerate(out_list):
-                label = labels[:, one_label]
-                loss_list.append(criterion(out.reshape(-1,), label))
-
-            loss = loss_list[-1]
-            for i in range(n_classes - 1):
-                loss += loss_list[i]
-
-            if debug:
-                loss.backward()
-            else:
-                with amp.scale_loss(loss, optimizer) as scaled_loss:
-                    scaled_loss.backward()
+            with amp.scale_loss(loss, optimizer) as scaled_loss:
+                scaled_loss.backward()
+    #         loss.backward()
 
             tr_loss += loss.item()
 
@@ -245,12 +336,20 @@ if __name__ == '__main__':
         epoch_loss = tr_loss / len(data_loader_train)
         print('Training Loss: {:.4f}'.format(epoch_loss))
 
+
+    # # Inference
+
+    # In[ ]:
+
+
+    # Inference
+
     for param in model.parameters():
         param.requires_grad = False
 
     model.eval()
 
-    test_pred = np.zeros((len(test_dataset), n_classes))
+    test_pred = np.zeros((len(test_dataset) * n_classes, 1))
 
     for i, x_batch in enumerate(tqdm(data_loader_test)):
 
@@ -259,18 +358,22 @@ if __name__ == '__main__':
 
         with torch.no_grad():
 
-            pred_list = model(x_batch)
+            pred = model(x_batch)
 
-            for one_label, pred in enumerate(pred_list):
-                test_pred[i * batch_size:(i + 1) * batch_size, one_label] = torch.sigmoid(pred.reshape(-1,)).detach().cpu()
+            test_pred[(i * batch_size * n_classes):((i + 1) * batch_size * n_classes)] = torch.sigmoid(
+                pred).detach().cpu().reshape((len(x_batch) * n_classes, 1))
 
-        if debug and i > 50:
-            break
+
+    # # Submission
+
+    # In[ ]:
+
 
     # Submission
-    if not debug:
-        submission =  pd.read_csv(os.path.join(dir_csv, 'stage_1_sample_submission.csv'))
-        submission = pd.concat([submission.drop(columns=['Label']), pd.DataFrame(test_pred.reshape((-1, 1)))], axis=1)
-        submission.columns = ['ID', 'Label']
-        submission.to_csv(f'../../output/{Path(__file__).name}_sub.csv', index=False)
-        submission.head()
+
+    submission =  pd.read_csv(os.path.join(dir_csv, 'stage_1_sample_submission.csv'))
+    submission = pd.concat([submission.drop(columns=['Label']), pd.DataFrame(test_pred)], axis=1)
+    submission.columns = ['ID', 'Label']
+
+    submission.to_csv(f'{Path(__file__).name}_sub.csv', index=False)
+    submission.head()

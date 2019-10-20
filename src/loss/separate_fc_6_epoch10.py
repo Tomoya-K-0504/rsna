@@ -13,7 +13,7 @@ if debug:
     batch_size = 4
 else:
     n_classes = 6
-    n_epochs = 5
+    n_epochs = 10
     batch_size = 32
 
 

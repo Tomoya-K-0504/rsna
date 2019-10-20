@@ -5,16 +5,11 @@ dir_test_img = '../../input/stage_1_test_pngs/'
 
 
 # Parameters
-debug = False 
 
-if debug:
-    n_classes = 6
-    n_epochs = 1
-    batch_size = 4
-else:
-    n_classes = 6
-    n_epochs = 5
-    batch_size = 32
+n_classes = 6
+n_epochs = 2
+batch_size = 32
+threshold = 0.6
 
 
 import glob
@@ -34,8 +29,7 @@ from torch import nn
 from torch.utils.data import Dataset
 from tqdm import tqdm as tqdm
 
-if not debug:
-    from apex import amp
+from apex import amp
 
 CT_LEVEL = 40
 CT_WIDTH = 150
@@ -103,24 +97,23 @@ class IntracranialDataset(Dataset):
         if self.labels:
             labels = torch.tensor(
                 self.data.loc[idx, ['epidural', 'intraparenchymal', 'intraventricular', 'subarachnoid', 'subdural', 'any']])
-            return {'image': img, 'labels': labels}
+            return {'image': img, 'labels': (labels, labels[5])}
         
-        else:
+        else:      
             return {'image': img}
 
 
 class SepalateFc(nn.Module):
     def __init__(self, input_size):
         super(SepalateFc, self).__init__()
-        for i in range(6):
-            setattr(self, f'fc_label_{i}', torch.nn.Linear(input_size, 1))
+        self.fc_6 = torch.nn.Linear(input_size, 6)
+        self.fc_2 = torch.nn.Linear(input_size, 1)
 
     def forward(self, x):
-        out_list = []
-        for i in range(6):
-            out_list.append(getattr(self, f'fc_label_{i}')(x))
+        out_6 = self.fc_6(x)
+        out_2 = self.fc_2(x)
 
-        return out_list
+        return out_6, out_2
 
 
 if __name__ == '__main__':
@@ -179,22 +172,20 @@ if __name__ == '__main__':
     data_loader_train = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
     data_loader_test = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
 
-    if debug:
-        device = torch.device("cpu")
-    else:
-        device = torch.device("cuda:0")
-
+    device = torch.device("cuda:0")
+    # device = torch.device("cpu")
+    # model = torch.hub.load('facebookresearch/WSL-Images', 'resnext101_32x8d_wsl')
     model = torch.hub.load('pytorch/vision', 'shufflenet_v2_x1_0', pretrained=True)
     model.fc = SepalateFc(1024)
 
     model.to(device)
 
-    criterion = torch.nn.BCEWithLogitsLoss()
+    crt_6 = torch.nn.BCEWithLogitsLoss()
+    crt_2 = torch.nn.BCEWithLogitsLoss()
     plist = [{'params': model.parameters(), 'lr': 2e-5}]
     optimizer = optim.Adam(plist, lr=2e-5)
 
-    if not debug:
-        model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
+    model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
 
     for epoch in range(n_epochs):
 
@@ -210,27 +201,21 @@ if __name__ == '__main__':
         for step, batch in enumerate(tk0):
 
             inputs = batch["image"]
-            labels = batch["labels"]
+            labels_6, labels_2 = batch["labels"]
 
             inputs = inputs.to(device, dtype=torch.float)
-            labels = labels.to(device, dtype=torch.float)
+            # labels_5 = labels_5.to(device, dtype=torch.float)
+            labels_2 = labels_2.to(device, dtype=torch.float)
 
-            out_list = model(inputs)
+            out_6, out_2 = model(inputs)
+            # loss_5 = crt_5(out_5, labels_5)
+            loss_2 = crt_2(out_2.reshape((-1, 1)), labels_2.reshape((-1, 1)))
 
-            loss_list = []
-            for one_label, out in enumerate(out_list):
-                label = labels[:, one_label]
-                loss_list.append(criterion(out.reshape(-1,), label))
+            loss = loss_2
 
-            loss = loss_list[-1]
-            for i in range(n_classes - 1):
-                loss += loss_list[i]
-
-            if debug:
-                loss.backward()
-            else:
-                with amp.scale_loss(loss, optimizer) as scaled_loss:
-                    scaled_loss.backward()
+            with amp.scale_loss(loss, optimizer) as scaled_loss:
+                scaled_loss.backward()
+            # loss.backward()
 
             tr_loss += loss.item()
 
@@ -244,6 +229,49 @@ if __name__ == '__main__':
 
         epoch_loss = tr_loss / len(data_loader_train)
         print('Training Loss: {:.4f}'.format(epoch_loss))
+
+        # 2回目の学習
+        for epoch in range(n_epochs):
+
+            print('Epoch {}/{}'.format(epoch, n_epochs - 1))
+            print('-' * 10)
+
+            model.train()
+            tr_loss = 0
+
+            tk0 = tqdm(data_loader_train, desc="Iteration")
+
+            for step, batch in enumerate(tk0):
+
+                inputs = batch["image"]
+                labels_6, labels_2 = batch["labels"]
+
+                inputs = inputs.to(device, dtype=torch.float)
+                labels_6 = labels_6.to(device, dtype=torch.float)
+                # labels_2 = labels_2.to(device, dtype=torch.float)
+
+                out_6, out_2 = model(inputs)
+                loss_6 = crt_6(out_6, labels_6)
+                # loss_2 = crt_2(out_2.reshape((-1, 1)), labels_2.reshape((-1, 1)))
+
+                loss = loss_6
+
+                with amp.scale_loss(loss, optimizer) as scaled_loss:
+                    scaled_loss.backward()
+                # loss.backward()
+
+                tr_loss += loss.item()
+
+                optimizer.step()
+                optimizer.zero_grad()
+
+                if epoch == 1 and step > 6000:
+                    epoch_loss = tr_loss / 6000
+                    print('Training Loss: {:.4f}'.format(epoch_loss))
+                    break
+
+            epoch_loss = tr_loss / len(data_loader_train)
+            print('Training Loss: {:.4f}'.format(epoch_loss))
 
     for param in model.parameters():
         param.requires_grad = False
@@ -259,18 +287,18 @@ if __name__ == '__main__':
 
         with torch.no_grad():
 
-            pred_list = model(x_batch)
+            pred_6, pred_2 = model(x_batch)
 
-            for one_label, pred in enumerate(pred_list):
-                test_pred[i * batch_size:(i + 1) * batch_size, one_label] = torch.sigmoid(pred.reshape(-1,)).detach().cpu()
+            test_pred[i * batch_size:(i + 1) * batch_size, :] = torch.sigmoid(pred_6).detach().cpu()
+            # test_pred[i * batch_size:(i + 1) * batch_size, 5] = torch.sigmoid(pred_2.reshape((-1,))).detach().cpu()
 
-        if debug and i > 50:
-            break
+        # if i > 50:
+        #     break
 
     # Submission
-    if not debug:
-        submission =  pd.read_csv(os.path.join(dir_csv, 'stage_1_sample_submission.csv'))
-        submission = pd.concat([submission.drop(columns=['Label']), pd.DataFrame(test_pred.reshape((-1, 1)))], axis=1)
-        submission.columns = ['ID', 'Label']
-        submission.to_csv(f'../../output/{Path(__file__).name}_sub.csv', index=False)
-        submission.head()
+
+    submission =  pd.read_csv(os.path.join(dir_csv, 'stage_1_sample_submission.csv'))
+    submission = pd.concat([submission.drop(columns=['Label']), pd.DataFrame(test_pred.reshape((-1, 1)))], axis=1)
+    submission.columns = ['ID', 'Label']
+    submission.to_csv(f'../../output/{Path(__file__).name}_sub.csv', index=False)
+    submission.head()

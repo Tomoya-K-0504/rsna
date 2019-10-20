@@ -5,37 +5,32 @@ dir_test_img = '../../input/stage_1_test_pngs/'
 
 
 # Parameters
-debug = False 
 
-if debug:
-    n_classes = 6
-    n_epochs = 1
-    batch_size = 4
-else:
-    n_classes = 6
-    n_epochs = 5
-    batch_size = 32
+n_classes = 6
+n_epochs = 15
+batch_size = 32
 
 
-import glob
-import os
+from apex import amp
 from pathlib import Path
-
+import os
 import cv2
+import glob
+import pydicom
 import numpy as np
 import pandas as pd
-import pydicom
 import torch
+import torchvision
 import torch.optim as optim
-from albumentations import Compose, ShiftScaleRotate, CenterCrop, HorizontalFlip, RandomBrightnessContrast
-from albumentations.pytorch import ToTensor
+from efficientnet_pytorch import EfficientNet
 from skimage.transform import resize
-from torch import nn
+from albumentations import Compose, ShiftScaleRotate, Resize, CenterCrop, HorizontalFlip, RandomBrightnessContrast
+from albumentations.pytorch import ToTensor
 from torch.utils.data import Dataset
 from tqdm import tqdm as tqdm
+from matplotlib import pyplot as plt
+from torchvision import transforms
 
-if not debug:
-    from apex import amp
 
 CT_LEVEL = 40
 CT_WIDTH = 150
@@ -103,25 +98,18 @@ class IntracranialDataset(Dataset):
         if self.labels:
             labels = torch.tensor(
                 self.data.loc[idx, ['epidural', 'intraparenchymal', 'intraventricular', 'subarachnoid', 'subdural', 'any']])
-            return {'image': img, 'labels': labels}
+            return {'image': img, 'labels': labels}    
         
-        else:
+        else:      
             return {'image': img}
 
 
-class SepalateFc(nn.Module):
-    def __init__(self, input_size):
-        super(SepalateFc, self).__init__()
-        for i in range(6):
-            setattr(self, f'fc_label_{i}', torch.nn.Linear(input_size, 1))
+# # CSV
 
-    def forward(self, x):
-        out_list = []
-        for i in range(6):
-            out_list.append(getattr(self, f'fc_label_{i}')(x))
+# In[7]:
 
-        return out_list
 
+# CSVs
 
 if __name__ == '__main__':
     if not Path('../../src/train.csv').is_file():
@@ -179,13 +167,11 @@ if __name__ == '__main__':
     data_loader_train = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
     data_loader_test = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
 
-    if debug:
-        device = torch.device("cpu")
-    else:
-        device = torch.device("cuda:0")
-
+    device = torch.device("cuda:0")
+    # device = torch.device("cpu")
+    # model = torch.hub.load('facebookresearch/WSL-Images', 'resnext101_32x8d_wsl')
     model = torch.hub.load('pytorch/vision', 'shufflenet_v2_x1_0', pretrained=True)
-    model.fc = SepalateFc(1024)
+    model.fc = torch.nn.Linear(1024, n_classes)
 
     model.to(device)
 
@@ -193,8 +179,7 @@ if __name__ == '__main__':
     plist = [{'params': model.parameters(), 'lr': 2e-5}]
     optimizer = optim.Adam(plist, lr=2e-5)
 
-    if not debug:
-        model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
+    model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
 
     for epoch in range(n_epochs):
 
@@ -206,7 +191,6 @@ if __name__ == '__main__':
 
         tk0 = tqdm(data_loader_train, desc="Iteration")
 
-        # 1回目の学習
         for step, batch in enumerate(tk0):
 
             inputs = batch["image"]
@@ -215,22 +199,12 @@ if __name__ == '__main__':
             inputs = inputs.to(device, dtype=torch.float)
             labels = labels.to(device, dtype=torch.float)
 
-            out_list = model(inputs)
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
 
-            loss_list = []
-            for one_label, out in enumerate(out_list):
-                label = labels[:, one_label]
-                loss_list.append(criterion(out.reshape(-1,), label))
-
-            loss = loss_list[-1]
-            for i in range(n_classes - 1):
-                loss += loss_list[i]
-
-            if debug:
-                loss.backward()
-            else:
-                with amp.scale_loss(loss, optimizer) as scaled_loss:
-                    scaled_loss.backward()
+            with amp.scale_loss(loss, optimizer) as scaled_loss:
+                scaled_loss.backward()
+            # loss.backward()
 
             tr_loss += loss.item()
 
@@ -250,7 +224,7 @@ if __name__ == '__main__':
 
     model.eval()
 
-    test_pred = np.zeros((len(test_dataset), n_classes))
+    test_pred = np.zeros((len(test_dataset) * n_classes, 1))
 
     for i, x_batch in enumerate(tqdm(data_loader_test)):
 
@@ -259,18 +233,15 @@ if __name__ == '__main__':
 
         with torch.no_grad():
 
-            pred_list = model(x_batch)
+            pred = model(x_batch)
 
-            for one_label, pred in enumerate(pred_list):
-                test_pred[i * batch_size:(i + 1) * batch_size, one_label] = torch.sigmoid(pred.reshape(-1,)).detach().cpu()
-
-        if debug and i > 50:
-            break
+            test_pred[(i * batch_size * n_classes):((i + 1) * batch_size * n_classes)] = torch.sigmoid(
+                pred).detach().cpu().reshape((len(x_batch) * n_classes, 1))
 
     # Submission
-    if not debug:
-        submission =  pd.read_csv(os.path.join(dir_csv, 'stage_1_sample_submission.csv'))
-        submission = pd.concat([submission.drop(columns=['Label']), pd.DataFrame(test_pred.reshape((-1, 1)))], axis=1)
-        submission.columns = ['ID', 'Label']
-        submission.to_csv(f'../../output/{Path(__file__).name}_sub.csv', index=False)
-        submission.head()
+
+    submission =  pd.read_csv(os.path.join(dir_csv, 'stage_1_sample_submission.csv'))
+    submission = pd.concat([submission.drop(columns=['Label']), pd.DataFrame(test_pred)], axis=1)
+    submission.columns = ['ID', 'Label']
+    submission.to_csv(f'../../output/{Path(__file__).name}_sub.csv', index=False)
+    submission.head()
