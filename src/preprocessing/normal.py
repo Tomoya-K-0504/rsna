@@ -1,39 +1,15 @@
 
-dir_csv = '../input/'
-dir_train_img = '../input/stage_1_train_pngs/'
-dir_test_img = '../input/stage_1_test_pngs/'
-
-
-# In[2]:
-
+dir_csv = '../../input/'
+dir_train_img = '../../input/processed/train_all-channel_224/'
+dir_test_img = '../../input/processed/test_all-channel_224/'
 
 
 # Parameters
 
 n_classes = 6
-n_epochs = 10
+n_epochs = 5
 batch_size = 32
 
-
-# # Setup
-# 
-# Need to grab a couple of extra libraries
-# 
-# - Nvidia Apex for mixed precision training (https://github.com/NVIDIA/apex)
-
-# In[3]:
-
-
-# Installing useful libraries
-
-# !git clone https://github.com/NVIDIA/apex && cd apex && pip install -v --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
-    
-
-
-# In[4]:
-
-
-# Libraries
 
 from apex import amp
 from pathlib import Path
@@ -46,6 +22,7 @@ import pandas as pd
 import torch
 import torchvision
 import torch.optim as optim
+from efficientnet_pytorch import EfficientNet
 from skimage.transform import resize
 from albumentations import Compose, ShiftScaleRotate, Resize, CenterCrop, HorizontalFlip, RandomBrightnessContrast
 from albumentations.pytorch import ToTensor
@@ -53,9 +30,6 @@ from torch.utils.data import Dataset
 from tqdm import tqdm as tqdm
 from matplotlib import pyplot as plt
 from torchvision import transforms
-
-
-# In[5]:
 
 
 CT_LEVEL = 40
@@ -76,8 +50,6 @@ def set_manual_window(hu_image, custom_center, custom_width):
     hu_image[hu_image > max_value] = max_value
     return hu_image
 
-
-# Functions
 
 class IntracranialDataset(Dataset):
 
@@ -140,94 +112,36 @@ class IntracranialDataset(Dataset):
 # CSVs
 
 if __name__ == '__main__':
+    if not Path('train.csv').is_file():
+        train = pd.read_csv(os.path.join(dir_csv, 'stage_1_train.csv'))
+        test = pd.read_csv(os.path.join(dir_csv, 'stage_1_sample_submission.csv'))
 
-    train = pd.read_csv(os.path.join(dir_csv, 'stage_1_train.csv'))
-    test = pd.read_csv(os.path.join(dir_csv, 'stage_1_sample_submission.csv'))
+        # Split train out into row per image and save a sample
 
+        train[['ID', 'Image', 'Diagnosis']] = train['ID'].str.split('_', expand=True)
+        train = train[['Image', 'Diagnosis', 'Label']]
+        train.drop_duplicates(inplace=True)
+        train = train.pivot(index='Image', columns='Diagnosis', values='Label').reset_index()
+        train['Image'] = 'ID_' + train['Image']
+        train.head()
 
-    # In[8]:
+        # Some files didn't contain legitimate images, so we need to remove them
 
+        png = glob.glob(os.path.join(dir_train_img, '*.png'))
+        png = [os.path.basename(png)[:-4] for png in png]
+        png = np.array(png)
 
+        train = train[train['Image'].isin(png)]
+        train.to_csv('train.csv', index=False)
 
-    # Split train out into row per image and save a sample
+        # Also prepare the test data
 
-    train[['ID', 'Image', 'Diagnosis']] = train['ID'].str.split('_', expand=True)
-    train = train[['Image', 'Diagnosis', 'Label']]
-    train.drop_duplicates(inplace=True)
-    train = train.pivot(index='Image', columns='Diagnosis', values='Label').reset_index()
-    train['Image'] = 'ID_' + train['Image']
-    train.head()
+        test[['ID','Image','Diagnosis']] = test['ID'].str.split('_', expand=True)
+        test['Image'] = 'ID_' + test['Image']
+        test = test[['Image', 'Label']]
+        test.drop_duplicates(inplace=True)
 
-
-    # In[9]:
-
-
-    undersample_seed=0
-    train["any"].value_counts()
-
-
-    # In[10]:
-
-
-    num_ill_patients = train[train["any"]==1].shape[0]
-    num_ill_patients
-
-
-    # In[11]:
-
-
-    healthy_patients = train[train["any"]==0].index.values
-    healthy_patients_selection = np.random.RandomState(undersample_seed).choice(
-        healthy_patients, size=num_ill_patients, replace=False
-    )
-    len(healthy_patients_selection)
-
-
-    # In[12]:
-
-
-    sick_patients = train[train["any"]==1].index.values
-    selected_patients = list(set(healthy_patients_selection).union(set(sick_patients)))
-    len(selected_patients)/2
-
-
-    # In[13]:
-
-
-    new_train = train.loc[selected_patients].copy()
-    new_train["any"].value_counts()
-
-
-    # In[14]:
-
-
-    # Some files didn't contain legitimate images, so we need to remove them
-
-    png = glob.glob(os.path.join(dir_train_img, '*.png'))
-    png = [os.path.basename(png)[:-4] for png in png]
-    png = np.array(png)
-
-    train = train[train['Image'].isin(png)]
-    train.to_csv('train.csv', index=False)
-
-
-    # In[15]:
-
-
-    # Also prepare the test data
-
-    test[['ID','Image','Diagnosis']] = test['ID'].str.split('_', expand=True)
-    test['Image'] = 'ID_' + test['Image']
-    test = test[['Image', 'Label']]
-    test.drop_duplicates(inplace=True)
-
-    test.to_csv('test.csv', index=False)
-
-
-    # # DataLoaders
-
-    # In[16]:
-
+        test.to_csv('test.csv', index=False)
 
     # Data loaders
 
@@ -253,42 +167,11 @@ if __name__ == '__main__':
     data_loader_train = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
     data_loader_test = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
 
-
-    # In[17]:
-
-
-    len(train_dataset)
-
-
-    # In[18]:
-
-
-    # Plot train example
-
-    batch = next(iter(data_loader_train))
-    fig, axs = plt.subplots(1, 5, figsize=(15,5))
-
-    for i in np.arange(5):
-
-        axs[i].imshow(np.transpose(batch['image'][i].numpy(), (1,2,0))[:,:,0], cmap=plt.cm.bone)
-
-
-    # In[19]:
-
-
-    # Plot test example
-
-    batch = next(iter(data_loader_test))
-    fig, axs = plt.subplots(1, 5, figsize=(15,5))
-
-    for i in np.arange(5):
-
-        axs[i].imshow(np.transpose(batch['image'][i].numpy(), (1,2,0))[:,:,0], cmap=plt.cm.bone)
-
-
     device = torch.device("cuda:0")
-    model = torch.hub.load('facebookresearch/WSL-Images', 'resnext101_32x8d_wsl')
-    model.fc = torch.nn.Linear(2048, n_classes)
+    # device = torch.device("cpu")
+    # model = torch.hub.load('facebookresearch/WSL-Images', 'resnext101_32x8d_wsl')
+    model = torch.hub.load('pytorch/vision', 'shufflenet_v2_x1_0', pretrained=True)
+    model.fc = torch.nn.Linear(1024, n_classes)
 
     model.to(device)
 
@@ -321,7 +204,7 @@ if __name__ == '__main__':
 
             with amp.scale_loss(loss, optimizer) as scaled_loss:
                 scaled_loss.backward()
-    #         loss.backward()
+            # loss.backward()
 
             tr_loss += loss.item()
 
@@ -335,14 +218,6 @@ if __name__ == '__main__':
 
         epoch_loss = tr_loss / len(data_loader_train)
         print('Training Loss: {:.4f}'.format(epoch_loss))
-
-
-    # # Inference
-
-    # In[ ]:
-
-
-    # Inference
 
     for param in model.parameters():
         param.requires_grad = False
@@ -363,17 +238,10 @@ if __name__ == '__main__':
             test_pred[(i * batch_size * n_classes):((i + 1) * batch_size * n_classes)] = torch.sigmoid(
                 pred).detach().cpu().reshape((len(x_batch) * n_classes, 1))
 
-
-    # # Submission
-
-    # In[ ]:
-
-
     # Submission
 
     submission =  pd.read_csv(os.path.join(dir_csv, 'stage_1_sample_submission.csv'))
     submission = pd.concat([submission.drop(columns=['Label']), pd.DataFrame(test_pred)], axis=1)
     submission.columns = ['ID', 'Label']
-
-    submission.to_csv(f'{Path(__file__).name}_sub.csv', index=False)
+    submission.to_csv(f'../../output/{Path(__file__).name}_sub.csv', index=False)
     submission.head()

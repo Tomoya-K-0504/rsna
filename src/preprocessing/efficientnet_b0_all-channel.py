@@ -19,8 +19,8 @@
 # Input
 
 dir_csv = '../input/'
-dir_train_img = '../input/stage_1_train_pngs/'
-dir_test_img = '../input/stage_1_test_pngs/'
+dir_train_img = '../input/processed/train_all-channel_224/'
+dir_test_img = '../input/processed/test_all-channel_224/'
 
 
 # In[2]:
@@ -31,7 +31,7 @@ dir_test_img = '../input/stage_1_test_pngs/'
 
 n_classes = 6
 n_epochs = 1
-batch_size = 64
+batch_size = 32
 
 
 # # Setup
