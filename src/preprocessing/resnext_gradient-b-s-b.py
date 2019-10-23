@@ -121,7 +121,7 @@ if __name__ == '__main__':
     device = torch.device("cuda:0")
     model = torch.hub.load('facebookresearch/WSL-Images', 'resnext101_32x8d_wsl')
     # model = torch.hub.load('pytorch/vision', 'shufflenet_v2_x1_0', pretrained=True)
-    model.fc = torch.nn.Linear(1024, n_classes)
+    model.fc = torch.nn.Linear(2048, n_classes)
 
     model.to(device)
 
