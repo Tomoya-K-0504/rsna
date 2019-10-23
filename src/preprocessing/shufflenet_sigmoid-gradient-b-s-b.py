@@ -1,6 +1,6 @@
 
 dir_csv = '../../input/'
-dir_train_img = '../input/processed/train_sigmoid-gradient-b-s-b_224/'
+dir_train_img = '../..//input/processed/train_sigmoid-gradient-b-s-b_224/'
 dir_test_img = '../input/processed/test_sigmoid-gradient-b-s-b_224/'
 
 

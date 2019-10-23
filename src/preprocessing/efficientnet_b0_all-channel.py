@@ -19,7 +19,7 @@
 # Input
 
 dir_csv = '../input/'
-dir_train_img = '../input/processed/train_all-channel_224/'
+dir_train_img = '../..//input/processed/train_all-channel_224/'
 dir_test_img = '../input/processed/test_all-channel_224/'
 
 
