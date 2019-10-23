@@ -1,7 +1,7 @@
 
 dir_csv = '../../input/'
-dir_train_img = '../../input/stage_1_train_pngs/'
-dir_test_img = '../../input/stage_1_test_pngs/'
+dir_train_img = '../input/processed/train_gradient_224/'
+dir_test_img = '../input/processed/test_gradient_224/'
 
 
 # Parameters

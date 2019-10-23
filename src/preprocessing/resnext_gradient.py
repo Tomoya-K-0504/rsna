@@ -1,7 +1,7 @@
 
 dir_csv = '../../input/'
-dir_train_img = '../../input/stage_1_train_pngs/'
-dir_test_img = '../../input/stage_1_test_pngs/'
+dir_train_img = '../input/processed/train_gradient_224/'
+dir_test_img = '../input/processed/test_gradient_224/'
 
 
 # Parameters
@@ -119,8 +119,8 @@ if __name__ == '__main__':
     data_loader_test = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
 
     device = torch.device("cuda:0")
-    # model = torch.hub.load('facebookresearch/WSL-Images', 'resnext101_32x8d_wsl')
-    model = torch.hub.load('pytorch/vision', 'shufflenet_v2_x1_0', pretrained=True)
+    model = torch.hub.load('facebookresearch/WSL-Images', 'resnext101_32x8d_wsl')
+    # model = torch.hub.load('pytorch/vision', 'shufflenet_v2_x1_0', pretrained=True)
     model.fc = torch.nn.Linear(1024, n_classes)
 
     model.to(device)

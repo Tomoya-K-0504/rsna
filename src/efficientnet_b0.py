@@ -30,7 +30,7 @@ dir_test_img = '../input/stage_1_test_pngs/'
 # Parameters
 
 n_classes = 6
-n_epochs = 1
+n_epochs = 5
 batch_size = 64
 
 
@@ -57,24 +57,24 @@ batch_size = 64
 
 # Libraries
 
-from apex import amp
-from pathlib import Path
-import os
-import cv2
 import glob
-from skimage.transform import resize
-import pydicom
+import os
+from pathlib import Path
+
+import cv2
 import numpy as np
 import pandas as pd
-from efficientnet_pytorch import EfficientNet
+import pydicom
 import torch
 import torch.optim as optim
-from albumentations import Compose, ShiftScaleRotate, Resize
+from albumentations import Compose, ShiftScaleRotate
 from albumentations.pytorch import ToTensor
+from efficientnet_pytorch import EfficientNet
+from skimage.transform import resize
 from torch.utils.data import Dataset
 from tqdm import tqdm as tqdm
-from matplotlib import pyplot as plt
 
+from apex import amp
 
 # In[5]:
 
