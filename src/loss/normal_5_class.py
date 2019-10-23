@@ -51,7 +51,7 @@ def set_manual_window(hu_image, custom_center, custom_width):
 
 class IntracranialDataset(Dataset):
 
-    def __init__(self, csv_file, data_dir, labels, ct_level=CT_LEVEL, ct_width=CT_WIDTH, transform=None):
+    def __init__(self, csv_file, data_dir, labels, ct_level=0, ct_width=0, transform=None):
         
         self.data_dir = data_dir
         self.data = pd.read_csv(csv_file)

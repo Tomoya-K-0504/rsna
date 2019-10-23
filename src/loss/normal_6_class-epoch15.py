@@ -11,26 +11,23 @@ n_epochs = 15
 batch_size = 32
 
 
-from apex import amp
-from pathlib import Path
-import os
-import cv2
 import glob
-import pydicom
+import os
+from pathlib import Path
+
+import cv2
 import numpy as np
 import pandas as pd
+import pydicom
 import torch
-import torchvision
 import torch.optim as optim
-from efficientnet_pytorch import EfficientNet
-from skimage.transform import resize
-from albumentations import Compose, ShiftScaleRotate, Resize, CenterCrop, HorizontalFlip, RandomBrightnessContrast
+from albumentations import Compose, ShiftScaleRotate, CenterCrop, HorizontalFlip, RandomBrightnessContrast
 from albumentations.pytorch import ToTensor
+from skimage.transform import resize
 from torch.utils.data import Dataset
 from tqdm import tqdm as tqdm
-from matplotlib import pyplot as plt
-from torchvision import transforms
 
+from apex import amp
 
 CT_LEVEL = 40
 CT_WIDTH = 150
@@ -53,7 +50,7 @@ def set_manual_window(hu_image, custom_center, custom_width):
 
 class IntracranialDataset(Dataset):
 
-    def __init__(self, csv_file, data_dir, labels, ct_level=CT_LEVEL, ct_width=CT_WIDTH, transform=None):
+    def __init__(self, csv_file, data_dir, labels, ct_level=0, ct_width=0, transform=None):
         
         self.data_dir = data_dir
         self.data = pd.read_csv(csv_file)
