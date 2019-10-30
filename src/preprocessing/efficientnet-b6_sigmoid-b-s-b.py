@@ -120,8 +120,8 @@ if __name__ == '__main__':
     data_loader_test = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
 
     device = torch.device("cuda:0")
-    model = EfficientNet.from_pretrained('efficientnet-b2')
-    model._fc = torch.nn.Linear(1408, n_classes)
+    model = EfficientNet.from_pretrained('efficientnet-b6')
+    model._fc = torch.nn.Linear(2304, n_classes)
 
     model.to(device)
 

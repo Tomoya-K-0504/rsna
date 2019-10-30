@@ -22,7 +22,6 @@ import torch
 import torch.optim as optim
 from albumentations import Compose, ShiftScaleRotate, CenterCrop, HorizontalFlip, RandomBrightnessContrast
 from albumentations.pytorch import ToTensor
-from efficientnet_pytorch import EfficientNet
 from torch.utils.data import Dataset
 from tqdm import tqdm as tqdm
 
@@ -120,8 +119,9 @@ if __name__ == '__main__':
     data_loader_test = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
 
     device = torch.device("cuda:0")
-    model = EfficientNet.from_pretrained('efficientnet-b2')
-    model._fc = torch.nn.Linear(1408, n_classes)
+    model = torch.hub.load('facebookresearch/WSL-Images', 'resnext101_32x16d_wsl')
+    # model = torch.hub.load('pytorch/vision', 'shufflenet_v2_x1_0', pretrained=True)
+    model.fc = torch.nn.Linear(2048, n_classes)
 
     model.to(device)
 
