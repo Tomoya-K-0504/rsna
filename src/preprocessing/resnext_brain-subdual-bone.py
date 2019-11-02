@@ -173,6 +173,7 @@ if __name__ == '__main__':
         param.requires_grad = False
 
     model.eval()
+    torch.save(model.state_dict(), f'../../output/{Path(__file__).name}.pth')
 
     test_pred = np.zeros((len(test_dataset) * n_classes, 1))
 
